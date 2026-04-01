@@ -1,598 +1,574 @@
-// Boolean Quiz - C# equivalent of the Python original
-// Original Python code is under Public Domain
-// https://repl.it/@codegiraffe/booleanq
-
-using System;
-using System.Collections.Generic;
-using System.Linq;
+// dotnet publish main.cs -c Release -r win-x64 --self-contained true
 using System.Text;
 
-class BooleanQuiz
-{
-    // ── Console color helpers ─────────────────────────────────────────────────
-
-    // Write text in a given color, then restore the previous foreground color.
-    static void WriteColored(string text, ConsoleColor color, bool newline = false)
-    {
-        ConsoleColor prev = Console.ForegroundColor;
-        Console.ForegroundColor = color;
-        if (newline) Console.WriteLine(text);
-        else         Console.Write(text);
-        Console.ForegroundColor = prev;
-    }
-
-    // The Python code cycled through six "foreground color" indices (offsets
-    // from the ANSI color base-30): 3=yellow, 5=magenta, 6=cyan, 1=red, 2=green, 4=blue.
-    static readonly ConsoleColor[] StepColors =
-    {
-        ConsoleColor.Yellow,   // ANSI 33
-        ConsoleColor.Magenta,  // ANSI 35
-        ConsoleColor.Cyan,     // ANSI 36
-        ConsoleColor.Red,      // ANSI 31
-        ConsoleColor.Green,    // ANSI 32
-        ConsoleColor.Blue,     // ANSI 34
-    };
-
-    // ── Logic-list helpers ────────────────────────────────────────────────────
-
-    /// <summary>
-    /// A "logic node" is either a string token (number, operator, keyword)
-    /// or a nested list of logic nodes – mirroring Python's nested-list design.
-    /// </summary>
-    abstract class Node { }
-
-    class TokenNode : Node
-    {
-        public string Value;
-        public TokenNode(string v) { Value = v; }
-        public override string ToString() => Value;
-    }
-
-    class ListNode : Node
-    {
-        public List<Node> Children = new List<Node>();
-        public override string ToString() => SimplifyToString(this);
-    }
-
-    static ListNode MakeList(params object[] items)
-    {
-        var ln = new ListNode();
-        foreach (var item in items)
-        {
-            if (item is Node n) ln.Children.Add(n);
-            else if (item is bool b) ln.Children.Add(new TokenNode(b ? "True" : "False"));
-            else ln.Children.Add(new TokenNode(item.ToString()));
-        }
-        return ln;
-    }
-
-    static int CountSublists(ListNode list)
-    {
-        int count = 0;
-        foreach (var child in list.Children)
-            if (child is ListNode) count++;
-        return count;
-    }
-
-    static string SimplifyToString(Node node)
-    {
-        if (node is TokenNode t) return t.Value;
-        var list = (ListNode)node;
-        var sb = new StringBuilder();
-        foreach (var child in list.Children)
-        {
-            if (sb.Length > 0) sb.Append(' ');
-            sb.Append(SimplifyToString(child));
-        }
-        return sb.ToString();
-    }
-
-    // Flatten one level of sublists (those with no nested sublists themselves).
-    // Mirrors Python's Flatten(list, 1).
-    static ListNode FlattenSingleTerms(ListNode list)
-    {
-        var result = new ListNode();
-        foreach (var child in list.Children)
-        {
-            if (child is ListNode sub && CountSublists(sub) == 0)
-                result.Children.AddRange(sub.Children);
-            else
-                result.Children.Add(child);
-        }
-        return result;
-    }
-
-    // ── Expression evaluator ──────────────────────────────────────────────────
-
-    static int _pos;
-
-    static bool ParseOr(List<string> tokens, ref int pos)
-    {
-        bool left = ParseAnd(tokens, ref pos);
-        while (pos < tokens.Count && tokens[pos] == "or")
-        {
-            pos++;
-            bool right = ParseAnd(tokens, ref pos);
-            left = left || right;
-        }
-        return left;
-    }
-
-    static bool ParseAnd(List<string> tokens, ref int pos)
-    {
-        bool left = ParseNot(tokens, ref pos);
-        while (pos < tokens.Count && tokens[pos] == "and")
-        {
-            pos++;
-            bool right = ParseNot(tokens, ref pos);
-            left = left && right;
-        }
-        return left;
-    }
-
-    static bool ParseNot(List<string> tokens, ref int pos)
-    {
-        if (pos < tokens.Count && tokens[pos] == "not")
-        {
-            pos++;
-            return !ParseNot(tokens, ref pos);
-        }
-        return ParseComparison(tokens, ref pos);
-    }
-
-    static bool ParseComparison(List<string> tokens, ref int pos)
-    {
-        if (pos < tokens.Count && tokens[pos] == "(")
-        {
-            pos++;
-            bool val = ParseOr(tokens, ref pos);
-            if (pos < tokens.Count && tokens[pos] == ")") pos++;
-            return val;
-        }
-        if (pos < tokens.Count && tokens[pos] == "True")  { pos++; return true;  }
-        if (pos < tokens.Count && tokens[pos] == "False") { pos++; return false; }
-
-        int left = int.Parse(tokens[pos++]);
-        string op = tokens[pos++];
-        int right = int.Parse(tokens[pos++]);
-        return op switch
-        {
-            "==" => left == right,
-            "!=" => left != right,
-            "<"  => left <  right,
-            ">"  => left >  right,
-            "<=" => left <= right,
-            ">=" => left >= right,
-            _ => throw new InvalidOperationException($"Unknown op: {op}")
-        };
-    }
-
-    static bool EvalNode(Node node)
-    {
-        _pos = 0;
-        var tokens = SimplifyToString(node).Split(' ').ToList();
-        return ParseOr(tokens, ref _pos);
-    }
-
-    // ── Question generation ───────────────────────────────────────────────────
-
-    static readonly string[] LogicalOperations = { "==", "!=", "<", ">", "<=", ">=" };
-    static readonly string[] BooleanOperations  = { "and", "or" };
-    static Random _rng = new Random();
-
-    static Node GenerateBooleanQuestion(bool allowNot = false, double chanceOfSimpleTF = 0.05)
-    {
-        Node result;
-        if (chanceOfSimpleTF > 0 && _rng.NextDouble() < chanceOfSimpleTF)
-        {
-            result = new TokenNode(_rng.Next(2) == 0 ? "True" : "False");
-        }
-        else
-        {
-            result = MakeList(
-                _rng.Next(0, 10),
-                LogicalOperations[_rng.Next(LogicalOperations.Length)],
-                _rng.Next(0, 10)
-            );
-        }
-
-        if (allowNot && _rng.Next(2) == 1)
-            result = MakeList(new TokenNode("not"), result);
-
-        return result;
-    }
-
-    static ListNode GenerateQuestion(int score)
-    {
-        Node logic = GenerateBooleanQuestion(score >= 15);
-
-        if (score >= 4)
-        {
-            Node logic2 = (score < 50)
-                ? (Node)new TokenNode(_rng.Next(2) == 0 ? "False" : "True")
-                : GenerateBooleanQuestion(score >= 75);
-
-            if (score >= 20 && _rng.Next(2) == 1)
-                logic2 = MakeList(new TokenNode("not"), logic2);
-
-            string boolOp = BooleanOperations[_rng.Next(BooleanOperations.Length)];
-            ListNode combined = score < 30
-                ? MakeList(logic, new TokenNode(boolOp), logic2)
-                : MakeList(logic2, new TokenNode(boolOp), logic);
-            logic = combined;
-
-            if (score > 100)
-            {
-                Node logic3 = (score < 150)
-                    ? (Node)new TokenNode(_rng.Next(2) == 0 ? "False" : "True")
-                    : GenerateBooleanQuestion(score >= 75);
-
-                var wrapped = new ListNode();
-                wrapped.Children.Add(new TokenNode("("));
-                wrapped.Children.AddRange(((ListNode)logic).Children);
-                wrapped.Children.Add(new TokenNode(")"));
-
-                string boolOp2 = BooleanOperations[_rng.Next(BooleanOperations.Length)];
-                logic = score < 125
-                    ? MakeList(wrapped, new TokenNode(boolOp2), logic3)
-                    : MakeList(logic3, new TokenNode(boolOp2), wrapped);
-            }
-        }
-
-        return FlattenSingleTerms((ListNode)logic);
-    }
-
-    // ── Step-by-step work display ─────────────────────────────────────────────
-
-    static readonly Dictionary<string, string> OperationInfo = new()
-    {
-        ["=="]  = "values are equal?",
-        ["<="]  = "less than or equal?",
-        [">="]  = "greater than or equal?",
-        ["< "]  = "less than?",
-        ["> "]  = "greater than?",
-        ["!="]  = "values are NOT equal?",
-        ["not"] = "not means logical opposite",
-        ["and"] = "both are true?",
-        ["or"]  = "at least one is true?"
-    };
-
-    static string _lastSubsection = "";
-
-    static (Node result, bool changed) CollapseOneLeaf(Node node)
-    {
-        if (node is TokenNode) return (node, false);
-
-        var list = (ListNode)node;
-
-        if (CountSublists(list) == 0)
-        {
-            _lastSubsection = SimplifyToString(list);
-            bool val = EvalNode(list);
-            return (new TokenNode(val ? "True" : "False"), true);
-        }
-
-        var newChildren = new List<Node>(list.Children);
-        for (int i = 0; i < newChildren.Count; i++)
-        {
-            if (newChildren[i] is ListNode)
-            {
-                var (collapsed, changed) = CollapseOneLeaf(newChildren[i]);
-                if (changed)
-                {
-                    newChildren[i] = collapsed;
-                    var result = new ListNode();
-                    result.Children.AddRange(newChildren);
-                    return (result, true);
-                }
-            }
-        }
-        return (node, false);
-    }
-
-    static void PrintWork(ListNode logic, bool useColor)
-    {
-        // colorOrder mirrors the Python original's index sequence (1-based ANSI offsets
-        // from 30, mapped to StepColors which is 0-indexed).
-        int[] colorOrder = { 3, 5, 6, 1, 2, 4 };
-        int colorIndex = 0;
-
-        Node current = logic;
-
-        while (true)
-        {
-            ConsoleColor stepColor = StepColors[colorOrder[colorIndex % colorOrder.Length] - 1];
-            colorIndex++;
-
-            string completeText = SimplifyToString(current);
-            var (next, changed) = CollapseOneLeaf(current);
-
-            if (!changed)
-            {
-                // Nothing left to collapse – print the final single value.
-                Console.WriteLine("   " + completeText);
-                string finalVal = EvalNode(current) ? "True" : "False";
-                int center = Math.Max(0, (completeText.Length - finalVal.Length) / 2 + 3);
-                if (useColor)
-                    WriteColored(new string(' ', center) + finalVal, stepColor, newline: true);
-                else
-                    Console.WriteLine(new string(' ', center) + finalVal);
-                break;
-            }
-
-            // Find the extra hint string for the operator in the sub-expression.
-            string extraInfo = "";
-            foreach (var kv in OperationInfo)
-            {
-                if (_lastSubsection.Contains(kv.Key))
-                {
-                    extraInfo = " <-- " + kv.Value;
-                    break;
-                }
-            }
-
-            // Print the full expression, coloring the active sub-expression and hint.
-            int idx = completeText.IndexOf(_lastSubsection, StringComparison.Ordinal);
-            Console.Write("   ");
-            if (useColor && idx >= 0)
-            {
-                Console.Write(completeText[..idx]);
-                WriteColored(_lastSubsection, stepColor);
-                Console.Write(completeText[(idx + _lastSubsection.Length)..]);
-                if (extraInfo.Length > 0)
-                    WriteColored(extraInfo, stepColor);
-            }
-            else
-            {
-                Console.Write(completeText + extraInfo);
-            }
-            Console.WriteLine();
-
-            // Print the result of the sub-expression, centred beneath it.
-            bool subResult = EvalNode(FlattenSingleTerms(
-                MakeList(_lastSubsection.Split(' ').Select(t => (object)t).ToArray())));
-            string subResultStr = subResult ? "True" : "False";
-            int subIdx = idx >= 0 ? idx : 0;
-            int spaces = Math.Max(0, (int)(subIdx + 3 + (_lastSubsection.Length - subResultStr.Length) / 2.0));
-            if (useColor)
-                WriteColored(new string(' ', spaces) + subResultStr, stepColor, newline: true);
-            else
-                Console.WriteLine(new string(' ', spaces) + subResultStr);
-
-            current = next;
-
-            // If the tree is now fully flat, do one final print and exit.
-            if (current is not ListNode curList || CountSublists(curList) == 0)
-            {
-                string finalText = SimplifyToString(current);
-                bool finalResult = EvalNode(current);
-                string finalStr  = finalResult ? "True" : "False";
-                if (useColor)
-                {
-                    WriteColored("   " + finalText, stepColor, newline: true);
-                    int fc = Math.Max(0, (finalText.Length - finalStr.Length) / 2 + 3);
-                    WriteColored(new string(' ', fc) + finalStr, stepColor, newline: true);
-                }
-                else
-                {
-                    Console.WriteLine("   " + finalText);
-                    int fc = Math.Max(0, (finalText.Length - finalStr.Length) / 2 + 3);
-                    Console.WriteLine(new string(' ', fc) + finalStr);
-                }
-                break;
-            }
-        }
-    }
-
-    // ── Validation code helpers ───────────────────────────────────────────────
-
-    static long   _userseed   = 0;
-    static string _allGuesses = "";
-    static int    _score      = 0;
-
-    static string VCode() => $"{_userseed}!{_allGuesses}!{_score}";
-
-    // ── Main ──────────────────────────────────────────────────────────────────
-
-    static void Main()
-    {
-        _userseed = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        _rng = new Random((int)(_userseed & 0x7FFFFFFF));
-
-        Console.WriteLine();
-        Console.WriteLine("quiz seed: " + _userseed);
-
-        int  score         = 0;
-        int  streak        = 0;
-        int  bestStreak    = 0;
-        int  totalWrong    = 0;
-        int  totalAnswered = 0;
-        int  lastScore     = 0;
-        bool hacked        = false;
-        string userGuess   = "";
-        string allGuesses  = "";
-        string userInputStream = "";
-        int    expectedscore   = 0;
-
-        string sep = "__________________________________________";
-
-        while (userGuess != "q")
-        {
-            bool askagain = false;
-            var logic = GenerateQuestion(score);
-
-            Console.WriteLine("\n\tif " + SimplifyToString(logic) +
-                              ":\n\t  print(\"t\")\n\telse:\n\t  print(\"f\")\n");
-
-            userGuess = "?";
-
-            if (userInputStream.Length > 0)
-            {
-                userGuess = userInputStream[0].ToString();
-                userInputStream = userInputStream[1..];
-            }
-
-            while (userGuess != "t" && userGuess != "f" && userGuess != "q")
-            {
-                if (expectedscore != 0)
-                {
-                    if (expectedscore == score)
-                        WriteColored("--- valid ---", ConsoleColor.Green, newline: true);
-                    else
-                        WriteColored("-- invalid --", ConsoleColor.Red,   newline: true);
-                    expectedscore = 0;
-                }
-
-                try
-                {
-                    Console.Write("What is the output? (");
-                    WriteColored("t", ConsoleColor.Cyan);
-                    Console.Write(" or ");
-                    WriteColored("f", ConsoleColor.Cyan);
-                    Console.Write(", ");
-                    WriteColored("?", ConsoleColor.Cyan);
-                    Console.Write(" for code, ");
-                    WriteColored("q", ConsoleColor.Cyan);
-                    Console.Write(" to quit) ");
-                    userGuess = (Console.ReadLine() ?? "q").Trim().ToLower();
-                }
-                catch
-                {
-                    userGuess = "q";
-                }
-
-                if (userGuess == "?" || userGuess == "q")
-                {
-                    if (userGuess == "q") allGuesses += "q";
-                    Console.WriteLine(sep + "\nValidation code:");
-                    Console.WriteLine(VCode());
-                }
-
-                if (userGuess.Length > 3)
-                {
-                    try
-                    {
-                        int bangIdx = userGuess.IndexOf('!');
-                        if (bangIdx < 0) bangIdx = userGuess.IndexOf(' ');
-                        if (bangIdx >= 0)
-                        {
-                            long newseed = (long)double.Parse(userGuess[..bangIdx]);
-                            int bang2 = userGuess.IndexOf('!', bangIdx + 1);
-                            if (bang2 < 0) bang2 = userGuess.IndexOf(' ', bangIdx + 1);
-                            if (bang2 >= 0)
-                            {
-                                userInputStream = userGuess[(bangIdx + 1)..bang2];
-                                int nextscore = int.Parse(userGuess[(bang2 + 1)..].Trim());
-                                Console.WriteLine("NEWSEED " + newseed);
-                                Console.WriteLine("EXPECTED SCORE " + nextscore);
-                                _userseed  = newseed;
-                                _rng       = new Random((int)(newseed & 0x7FFFFFFF));
-                                allGuesses = _allGuesses = "";
-                                score = streak = bestStreak = totalWrong = totalAnswered = 0;
-                                expectedscore = nextscore;
-                                askagain = true;
-                                break;
-                            }
-                        }
-                    }
-                    catch { /* ignore malformed input */ }
-                }
-            }
-
-            if (askagain) continue;
-            if (userGuess == "q") break;
-
-            totalAnswered++;
-            bool finalResult = EvalNode(logic);
-            bool usrRight = (finalResult && userGuess == "t") || (!finalResult && userGuess == "f");
-
-            if (!usrRight) Console.WriteLine("##########################################");
-            PrintWork(logic, !usrRight);
-            if (!usrRight) Console.WriteLine("##########################################");
-
-            allGuesses  += userGuess;
-            _allGuesses  = allGuesses;
-
-            if (usrRight)
-            {
-                score++;
-                streak++;
-                if (streak > bestStreak) bestStreak = streak;
-
-                string msg = " YOU WERE RIGHT! ";
-                int sm = score;
-                while (sm > 1) { msg = ">" + msg + "<"; sm /= 2; }
-
-                WriteColored(msg, ConsoleColor.Cyan);
-                if (score % 5 == 0 && userInputStream.Length == 0)
-                {
-                    Console.Write(" ");
-                    WriteColored(VCode(), ConsoleColor.Blue);
-                }
-                Console.WriteLine();
-            }
-            else
-            {
-                totalWrong++;
-                score = Math.Max(0, score - 2);
-                if (streak > 2)
-                    Console.WriteLine($"You've answered {totalWrong} incorrectly so far, " +
-                                      $"and {totalAnswered - totalWrong} correctly!");
-                streak = 0;
-            }
-
-            if (score > lastScore + 1) hacked = true;
-            _score = score;
-
-            string scoremsg = score switch
-            {
-                < 10  => "score",
-                < 20  => "Your Score",
-                < 30  => "Pretty Good Score",
-                < 40  => "Very Nice Score",
-                < 50  => "Impressive Score",
-                < 60  => "Great Score",
-                < 70  => "Outstanding Score",
-                < 80  => "Amazing Score",
-                < 90  => "Fantastic Score",
-                < 100 => "Astonishing Score",
-                < 120 => "Achievement Unlocked!",
-                < 140 => "Brilliant Score",
-                < 160 => "Outrageous Score",
-                < 180 => "Incredible Score",
-                < 200 => "Unbelievable Score",
-                < 225 => "What Score is This?",
-                < 250 => "I can't even",
-                < 275 => "this is just crazy",
-                < 300 => "How are you doing this?",
-                < 400 => "Are you a wizard?",
-                _     => "You are a wizard... "
-            };
-
-            Console.WriteLine("\n\n");
-            if (hacked)
-                WriteColored("hacked ", ConsoleColor.Red);
-            else
-                Console.Write(scoremsg);
-            Console.Write(": ");
-            WriteColored(score.ToString(), ConsoleColor.Green, newline: true);
-
-            if (!usrRight) Console.WriteLine("Try the next one.");
-
-            lastScore = score;
-        }
-
-        Console.WriteLine(sep);
-        int correct = totalAnswered - totalWrong;
-        Console.WriteLine($"Final Score: {score}    ({correct}/{totalAnswered})");
-        if (streak > 2)     Console.WriteLine($"You just finished {streak} correct in a row");
-        if (bestStreak > 2) Console.WriteLine($"Your best correct-in-a-row was {bestStreak}!\n\n");
-        if (expectedscore != 0)
-        {
-            if (expectedscore != score)
-                WriteColored("-- invalid --", ConsoleColor.Red,   newline: true);
-            else
-                WriteColored("--- valid ---", ConsoleColor.Green, newline: true);
-        }
-    }
+class BooleanQuiz {
+	static readonly ConsoleColor[] StepColors = new ConsoleColor[] {
+		ConsoleColor.Yellow,
+		ConsoleColor.Magenta,
+		ConsoleColor.Cyan,
+		ConsoleColor.Red,
+		ConsoleColor.Green,
+		ConsoleColor.Blue,
+	};
+
+	static void WriteColored(string text, ConsoleColor color, bool newline) {
+		ConsoleColor prev = Console.ForegroundColor;
+		Console.ForegroundColor = color;
+		if (newline) {
+			Console.WriteLine(text);
+		} else {
+			Console.Write(text);
+		}
+		Console.ForegroundColor = prev;
+	}
+
+	abstract class Node {
+		public abstract override string ToString();
+	}
+
+	class TokenNode : Node {
+		public string Value;
+
+		public TokenNode(string v) {
+			Value = v;
+		}
+
+		public override string ToString() {
+			return Value;
+		}
+	}
+
+	class ListNode : Node {
+		public List<Node> Children = new List<Node>();
+
+		public override string ToString() {
+			return SimplifyToString(this);
+		}
+	}
+
+	// ── Logic-list helpers ────────────────────────────────────────────────────
+
+	static ListNode MakeList(Node a, Node b, Node c) {
+		ListNode ln = new ListNode();
+		ln.Children.Add(a);
+		ln.Children.Add(b);
+		ln.Children.Add(c);
+		return ln;
+	}
+
+	static ListNode MakeList(Node a, Node b) {
+		ListNode ln = new ListNode();
+		ln.Children.Add(a);
+		ln.Children.Add(b);
+		return ln;
+	}
+
+	static int CountSublists(ListNode list) {
+		int count = 0;
+		for (int i = 0; i < list.Children.Count; i++) {
+			if (list.Children[i] is ListNode) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	static string SimplifyToString(Node node) {
+		if (node is TokenNode) {
+			return ((TokenNode)node).Value;
+		}
+		ListNode list = (ListNode)node;
+		StringBuilder sb = new StringBuilder();
+		for (int i = 0; i < list.Children.Count; i++) {
+			if (sb.Length > 0) {
+				sb.Append(' ');
+			}
+			sb.Append(SimplifyToString(list.Children[i]));
+		}
+		return sb.ToString();
+	}
+
+	// Flatten one level of sublists (those with no nested sublists themselves).
+	static ListNode FlattenSingleTerms(ListNode list) {
+		ListNode result = new ListNode();
+		for (int i = 0; i < list.Children.Count; i++) {
+			Node child = list.Children[i];
+			if (child is ListNode && CountSublists((ListNode)child) == 0) {
+				ListNode sub = (ListNode)child;
+				for (int j = 0; j < sub.Children.Count; j++) {
+					result.Children.Add(sub.Children[j]);
+				}
+			} else {
+				result.Children.Add(child);
+			}
+		}
+		return result;
+	}
+
+	// position kept class-level field so ParseXxx methods can advance without passing by reference
+	static int _pos;
+
+	static bool ParseOr(List<string> tokens) {
+		bool left = ParseAnd(tokens);
+		while (_pos < tokens.Count && tokens[_pos] == "or") {
+			_pos++;
+			bool right = ParseAnd(tokens);
+			left = left || right;
+		}
+		return left;
+	}
+
+	static bool ParseAnd(List<string> tokens) {
+		bool left = ParseNot(tokens);
+		while (_pos < tokens.Count && tokens[_pos] == "and") {
+			_pos++;
+			bool right = ParseNot(tokens);
+			left = left && right;
+		}
+		return left;
+	}
+
+	static bool ParseNot(List<string> tokens) {
+		if (_pos < tokens.Count && tokens[_pos] == "not") {
+			_pos++;
+			return !ParseNot(tokens);
+		}
+		return ParseComparison(tokens);
+	}
+
+	static bool ParseComparison(List<string> tokens) {
+		if (_pos < tokens.Count && tokens[_pos] == "(") {
+			_pos++;
+			bool val = ParseOr(tokens);
+			if (_pos < tokens.Count && tokens[_pos] == ")") {
+				_pos++;
+			}
+			return val;
+		}
+		if (_pos < tokens.Count && tokens[_pos] == "True") {
+			_pos++;
+			return true;
+		}
+		if (_pos < tokens.Count && tokens[_pos] == "False") {
+			_pos++;
+			return false;
+		}
+		int left = int.Parse(tokens[_pos++]);
+		string op = tokens[_pos++];
+		int right = int.Parse(tokens[_pos++]);
+		if (op == "==") { return left == right; }
+		if (op == "!=") { return left != right; }
+		if (op == "<") { return left < right; }
+		if (op == ">") { return left > right; }
+		if (op == "<=") { return left <= right; }
+		if (op == ">=") { return left >= right; }
+		throw new InvalidOperationException("Unknown operator: " + op);
+	}
+
+	static bool EvalNode(Node node) {
+		_pos = 0;
+		string expr = SimplifyToString(node);
+		string[] parts = expr.Split(' ');
+		List<string> tokens = new List<string>();
+		for (int i = 0; i < parts.Length; i++)
+		{
+			tokens.Add(parts[i]);
+		}
+		return ParseOr(tokens);
+	}
+
+	static readonly string[] LogicalOperations = new string[] { "==", "!=", "<", ">", "<=", ">=" };
+	static readonly string[] BooleanOperations = new string[] { "and", "or" };
+	static Random _rng = new Random();
+
+	static Node GenerateBooleanQuestion(bool allowNot, double chanceOfSimpleTF) {
+		Node result;
+		if (chanceOfSimpleTF > 0 && _rng.NextDouble() < chanceOfSimpleTF) {
+			string tfValue = (_rng.Next(2) == 0) ? "True" : "False";
+			result = new TokenNode(tfValue);
+		} else {
+			result = MakeList(
+					new TokenNode(_rng.Next(0, 10).ToString()),
+					new TokenNode(LogicalOperations[_rng.Next(LogicalOperations.Length)]),
+					new TokenNode(_rng.Next(0, 10).ToString())
+			);
+		}
+		if (allowNot && _rng.Next(2) == 1) {
+			result = MakeList(new TokenNode("not"), result);
+		}
+		return result;
+	}
+
+	static ListNode GenerateQuestion(int score) {
+		Node logic = GenerateBooleanQuestion(score >= 15, 0.05);
+		if (score >= 4) {
+			Node logic2;
+			if (score < 50) {
+				string tfValue = (_rng.Next(2) == 0) ? "False" : "True";
+				logic2 = new TokenNode(tfValue);
+			} else {
+				logic2 = GenerateBooleanQuestion(score >= 75, 0.05);
+			}
+			if (score >= 20 && _rng.Next(2) == 1) {
+				logic2 = MakeList(new TokenNode("not"), logic2);
+			}
+			string boolOp = BooleanOperations[_rng.Next(BooleanOperations.Length)];
+			ListNode combined;
+			if (score < 30) {
+				combined = MakeList(logic, new TokenNode(boolOp), logic2);
+			} else {
+				combined = MakeList(logic2, new TokenNode(boolOp), logic);
+			}
+			logic = combined;
+			if (score > 100) {
+				Node logic3;
+				if (score < 150) {
+					string tfValue = (_rng.Next(2) == 0) ? "False" : "True";
+					logic3 = new TokenNode(tfValue);
+				} else {
+					logic3 = GenerateBooleanQuestion(score >= 75, 0.05);
+				}
+				ListNode wrapped = new ListNode();
+				wrapped.Children.Add(new TokenNode("("));
+				ListNode logicAsList = (ListNode)logic;
+				for (int i = 0; i < logicAsList.Children.Count; i++) {
+					wrapped.Children.Add(logicAsList.Children[i]);
+				}
+				wrapped.Children.Add(new TokenNode(")"));
+				string boolOp2 = BooleanOperations[_rng.Next(BooleanOperations.Length)];
+				if (score < 125) {
+					logic = MakeList(wrapped, new TokenNode(boolOp2), logic3);
+				} else {
+					logic = MakeList(logic3, new TokenNode(boolOp2), wrapped);
+				}
+			}
+		}
+		return FlattenSingleTerms((ListNode)logic);
+	}
+
+	static readonly Dictionary<string, string> OperationInfo;
+
+	static BooleanQuiz() {
+		OperationInfo = new Dictionary<string, string>();
+		OperationInfo.Add("==", "values are equal?");
+		OperationInfo.Add("<=", "less than or equal?");
+		OperationInfo.Add(">=", "greater than or equal?");
+		OperationInfo.Add("< ", "less than?");
+		OperationInfo.Add("> ", "greater than?");
+		OperationInfo.Add("!=", "values are NOT equal?");
+		OperationInfo.Add("not", "not means logical opposite");
+		OperationInfo.Add("and", "both are true?");
+		OperationInfo.Add("or", "at least one is true?");
+	}
+
+	// most recently collapsed sub-expression so PrintWork can highlight it
+	static string _lastSubsection = "";
+
+	class CollapseResult {
+		public Node ResultNode;
+		public bool Changed;
+
+		public CollapseResult(Node node, bool changed) {
+			ResultNode = node;
+			Changed = changed;
+		}
+	}
+
+	static CollapseResult CollapseOneLeaf(Node node) {
+		if (node is TokenNode) {
+			return new CollapseResult(node, false);
+		}
+		ListNode list = (ListNode)node;
+		if (CountSublists(list) == 0) {
+			_lastSubsection = SimplifyToString(list);
+			bool val = EvalNode(list);
+			string resultToken = val ? "True" : "False";
+			return new CollapseResult(new TokenNode(resultToken), true);
+		}
+		List<Node> newChildren = new List<Node>();
+		for (int i = 0; i < list.Children.Count; i++) {
+			newChildren.Add(list.Children[i]);
+		}
+		for (int i = 0; i < newChildren.Count; i++) {
+			if (newChildren[i] is ListNode) {
+				CollapseResult inner = CollapseOneLeaf(newChildren[i]);
+				if (inner.Changed) {
+					newChildren[i] = inner.ResultNode;
+					ListNode updated = new ListNode();
+					for (int j = 0; j < newChildren.Count; j++) {
+						updated.Children.Add(newChildren[j]);
+					}
+					return new CollapseResult(updated, true);
+				}
+			}
+		}
+		return new CollapseResult(node, false);
+	}
+
+	static void PrintWork(ListNode logic, bool useColor) {
+		int[] colorOrder = new int[] { 3, 5, 6, 1, 2, 4 };
+		int colorIndex = 0;
+		Node current = logic;
+		while (true) {
+			ConsoleColor stepColor = StepColors[colorOrder[colorIndex % colorOrder.Length] - 1];
+			colorIndex++;
+			string completeText = SimplifyToString(current);
+			CollapseResult collapse = CollapseOneLeaf(current);
+			if (!collapse.Changed) {
+				Console.WriteLine("   " + completeText);
+				string finalVal = EvalNode(current) ? "True" : "False";
+				int center = Math.Max(0, (completeText.Length - finalVal.Length) / 2 + 3);
+				string finalLine = new string(' ', center) + finalVal;
+				if (useColor) {
+					WriteColored(finalLine, stepColor, true);
+				} else {
+					Console.WriteLine(finalLine);
+				}
+				break;
+			}
+			string extraInfo = "";
+			foreach (KeyValuePair<string, string> kv in OperationInfo) {
+				if (_lastSubsection.Contains(kv.Key)) {
+					extraInfo = " <-- " + kv.Value;
+					break;
+				}
+			}
+			int idx = completeText.IndexOf(_lastSubsection, StringComparison.Ordinal);
+			Console.Write("   ");
+			if (useColor && idx >= 0) {
+				Console.Write(completeText.Substring(0, idx));
+				WriteColored(_lastSubsection, stepColor, false);
+				Console.Write(completeText.Substring(idx + _lastSubsection.Length));
+				if (extraInfo.Length > 0) {
+					WriteColored(extraInfo, stepColor, false);
+				}
+			} else {
+				Console.Write(completeText + extraInfo);
+			}
+			Console.WriteLine();
+			string[] subParts = _lastSubsection.Split(' ');
+			ListNode subList = new ListNode();
+			for (int i = 0; i < subParts.Length; i++) {
+				subList.Children.Add(new TokenNode(subParts[i]));
+			}
+			bool subResult = EvalNode(FlattenSingleTerms(subList));
+			string subResultStr = subResult ? "True" : "False";
+			int subIdx = (idx >= 0) ? idx : 0;
+			int spaces = Math.Max(0, (int)(subIdx + 3 + (_lastSubsection.Length - subResultStr.Length) / 2.0));
+			string subLine = new string(' ', spaces) + subResultStr;
+			if (useColor) {
+				WriteColored(subLine, stepColor, true);
+			} else {
+				Console.WriteLine(subLine);
+			}
+			current = collapse.ResultNode;
+			bool isFullyFlat = !(current is ListNode) || CountSublists((ListNode)current) == 0;
+			if (isFullyFlat) {
+				string finalText = SimplifyToString(current);
+				bool finalResult = EvalNode(current);
+				string finalStr = finalResult ? "True" : "False";
+				int fc = Math.Max(0, (finalText.Length - finalStr.Length) / 2 + 3);
+				string finalTextLine = "   " + finalText;
+				string finalValLine = new string(' ', fc) + finalStr;
+				if (useColor) {
+					WriteColored(finalTextLine, stepColor, true);
+					WriteColored(finalValLine, stepColor, true);
+				} else {
+					Console.WriteLine(finalTextLine);
+					Console.WriteLine(finalValLine);
+				}
+				break;
+			}
+		}
+	}
+
+	static long _userseed = 0;
+	static string _allGuesses = "";
+	static int _score = 0;
+
+	static string VCode() {
+		return _userseed + "!" + _allGuesses + "!" + _score;
+	}
+
+	static string GetScoreMessage(int score) {
+		if (score < 10) { return "score"; }
+		if (score < 20) { return "Your Score"; }
+		if (score < 30) { return "Pretty Good Score"; }
+		if (score < 40) { return "Very Nice Score"; }
+		if (score < 50) { return "Impressive Score"; }
+		if (score < 60) { return "Great Score"; }
+		if (score < 70) { return "Outstanding Score"; }
+		if (score < 80) { return "Amazing Score"; }
+		if (score < 90) { return "Fantastic Score"; }
+		if (score < 100) { return "Astonishing Score"; }
+		if (score < 120) { return "Achievement Unlocked!"; }
+		if (score < 140) { return "Brilliant Score"; }
+		if (score < 160) { return "Outrageous Score"; }
+		if (score < 180) { return "Incredible Score"; }
+		if (score < 200) { return "Unbelievable Score"; }
+		if (score < 225) { return "What Score is This?"; }
+		if (score < 250) { return "I can't even"; }
+		if (score < 275) { return "this is just crazy"; }
+		if (score < 300) { return "How are you doing this?"; }
+		if (score < 400) { return "Are you a wizard?"; }
+		return "You are a wizard... ";
+	}
+
+	static void Main() {
+		_userseed = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+		_rng = new Random((int)(_userseed & 0x7FFFFFFF));
+		Console.WriteLine();
+		Console.WriteLine("quiz seed: " + _userseed);
+		int score = 0;
+		int streak = 0;
+		int bestStreak = 0;
+		int totalWrong = 0;
+		int totalAnswered = 0;
+		int lastScore = 0;
+		bool hacked = false;
+		string userGuess = "";
+		string allGuesses = "";
+		string userInputStream = "";
+		int expectedscore = 0;
+		string sep = "__________________________________________";
+		while (!userGuess.Equals("q")) {
+			bool askagain = false;
+			ListNode logic = GenerateQuestion(score);
+			Console.WriteLine("\n\tif " + SimplifyToString(logic) +
+												":\n\t  print(\"t\")\n\telse:\n\t  print(\"f\")\n");
+			userGuess = "?";
+			if (userInputStream.Length > 0) {
+				userGuess = userInputStream.Substring(0, 1);
+				userInputStream = userInputStream.Substring(1);
+			}
+			while (!userGuess.Equals("t") && !userGuess.Equals("f") && !userGuess.Equals("q")) {
+				if (expectedscore != 0) {
+					if (expectedscore == score) {
+						WriteColored("--- valid ---", ConsoleColor.Green, true);
+					} else {
+						WriteColored("-- invalid --", ConsoleColor.Red, true);
+					}
+					expectedscore = 0;
+				}
+				try {
+					Console.Write("What is the output? (");
+					WriteColored("t", ConsoleColor.Cyan, false);
+					Console.Write(" or ");
+					WriteColored("f", ConsoleColor.Cyan, false);
+					Console.Write(", ");
+					WriteColored("?", ConsoleColor.Cyan, false);
+					Console.Write(" for code, ");
+					WriteColored("q", ConsoleColor.Cyan, false);
+					Console.Write(" to quit) ");
+					string line = Console.ReadLine();
+					if (line == null) { line = "q"; }
+					userGuess = line.Trim().ToLower();
+				} catch (Exception) {
+					userGuess = "q";
+				}
+				if (userGuess.Equals("?") || userGuess.Equals("q")) {
+					if (userGuess.Equals("q")) {
+						allGuesses += "q";
+					}
+					Console.WriteLine(sep + "\nValidation code:");
+					Console.WriteLine(VCode());
+				}
+				if (userGuess.Length > 3) {
+					try {
+						int bangIdx = userGuess.IndexOf('!');
+						if (bangIdx < 0) { bangIdx = userGuess.IndexOf(' '); }
+						if (bangIdx >= 0) {
+							long newseed = (long)double.Parse(userGuess.Substring(0, bangIdx));
+							int bang2 = userGuess.IndexOf('!', bangIdx + 1);
+							if (bang2 < 0) { bang2 = userGuess.IndexOf(' ', bangIdx + 1); }
+							if (bang2 >= 0) {
+								userInputStream = userGuess.Substring(bangIdx + 1, bang2 - bangIdx - 1);
+								int nextscore = int.Parse(userGuess.Substring(bang2 + 1).Trim());
+								Console.WriteLine("NEWSEED " + newseed);
+								Console.WriteLine("EXPECTED SCORE " + nextscore);
+								_userseed = newseed;
+								_rng = new Random((int)(newseed & 0x7FFFFFFF));
+								allGuesses = "";
+								_allGuesses = "";
+								score = 0;
+								streak = 0;
+								bestStreak = 0;
+								totalWrong = 0;
+								totalAnswered = 0;
+								expectedscore = nextscore;
+								askagain = true;
+								break;
+							}
+						}
+					} catch (Exception) {
+						// Ignore malformed bulk-input sequences.
+					}
+				}
+			}
+			if (askagain) { continue; }
+			if (userGuess.Equals("q")) { break; }
+			totalAnswered++;
+			bool finalResult = EvalNode(logic);
+			bool usrRight = (finalResult && userGuess.Equals("t")) || (!finalResult && userGuess.Equals("f"));
+			if (!usrRight) { Console.WriteLine("##########################################"); }
+			PrintWork(logic, !usrRight);
+			if (!usrRight) { Console.WriteLine("##########################################"); }
+			allGuesses += userGuess;
+			_allGuesses = allGuesses;
+			if (usrRight) {
+				score++;
+				streak++;
+				if (streak > bestStreak) { bestStreak = streak; }
+				string msg = " YOU WERE RIGHT! ";
+				int sm = score;
+				while (sm > 1) {
+					msg = ">" + msg + "<";
+					sm /= 2;
+				}
+				WriteColored(msg, ConsoleColor.Cyan, false);
+				if (score % 5 == 0 && userInputStream.Length == 0) {
+					Console.Write(" ");
+					WriteColored(VCode(), ConsoleColor.Blue, false);
+				}
+				Console.WriteLine();
+			} else {
+				totalWrong++;
+				score = Math.Max(0, score - 2);
+				if (streak > 2) {
+					Console.WriteLine("You've answered " + totalWrong + " incorrectly so far, " +
+														"and " + (totalAnswered - totalWrong) + " correctly!");
+				}
+				streak = 0;
+			}
+			if (score > lastScore + 1) { hacked = true; }
+			_score = score;
+			Console.WriteLine("\n\n");
+			if (hacked) {
+				WriteColored("hacked ", ConsoleColor.Red, false);
+			} else {
+				Console.Write(GetScoreMessage(score));
+			}
+			Console.Write(": ");
+			WriteColored(score.ToString(), ConsoleColor.Green, true);
+			if (!usrRight) { Console.WriteLine("Try the next one."); }
+			lastScore = score;
+		}
+
+		Console.WriteLine(sep);
+		int correct = totalAnswered - totalWrong;
+		Console.WriteLine("Final Score: " + score + "    (" + correct + "/" + totalAnswered + ")");
+		if (streak > 2) {
+			Console.WriteLine("You just finished " + streak + " correct in a row");
+		}
+		if (bestStreak > 2) {
+			Console.WriteLine("Your best correct-in-a-row was " + bestStreak + "!\n\n");
+		}
+		if (expectedscore != 0) {
+			if (expectedscore != score) {
+				WriteColored("-- invalid --", ConsoleColor.Red, true);
+			} else {
+				WriteColored("--- valid ---", ConsoleColor.Green, true);
+			}
+		}
+	}
 }

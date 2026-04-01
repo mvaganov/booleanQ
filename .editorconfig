@@ -1,0 +1,13 @@
+# top-most EditorConfig file
+root = true
+
+# Unix-style newlines and tabs for all files in this project
+[*]
+end_of_line = lf
+indent_style = tab
+insert_final_newline = true
+trim_trailing_whitespace = true
+csharp_new_line_before_open_brace = none
+csharp_new_line_before_else = false
+csharp_new_line_before_catch = false
+csharp_new_line_before_finally = false
