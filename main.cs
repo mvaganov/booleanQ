@@ -3,6 +3,7 @@
 using System.Text;
 
 class BooleanQuiz {
+	static void print(object message) { Console.WriteLine(message); }
 	abstract class Node {
 		public abstract override string ToString();
 		public abstract Node Clone();
@@ -56,10 +57,12 @@ class BooleanQuiz {
 			for (int i = 0; i < list.Children.Count; i++) {
 				if (i > 0) {
 					bool skipSpace = false;
-					TokenNode tn = list.Children[i - 1] as TokenNode;
-					if (tn != null && (tn.Value == ParenOp || tn.Value == Not)) { skipSpace = true; }
-					tn = i == list.Children.Count - 1 ? list.Children[i] as TokenNode : null;
-					if (tn != null && tn.Value == ParenCl) { skipSpace = true; }
+					TokenNode LastToken = list.Children[i - 1] is TokenNode ? (TokenNode)list.Children[i - 1] : null;
+					bool justPrintedParenthesisOrNot = LastToken != null && (LastToken.Value == ParenOp || LastToken.Value == Not);
+					if (justPrintedParenthesisOrNot) { skipSpace = true; }
+					TokenNode thisToken = list.Children[i] is TokenNode ? (TokenNode)list.Children[i] : null;
+					bool aboutToPrintParenthesis = thisToken != null && thisToken.Value == ParenCl;
+					if (aboutToPrintParenthesis) { skipSpace = true; }
 					if (!skipSpace) {
 						sb.Append(' ');
 					}
@@ -239,7 +242,16 @@ class BooleanQuiz {
 		ConsoleColor.Green, ConsoleColor.Red, ConsoleColor.Blue,
 	};
 	const char ColorSwitchCode = '\b';
-	static string ColorRevert = ColorSwitchCode.ToString() + '-';
+	static string ColorSwitchStr = ColorSwitchCode.ToString();
+	static string C_Revert = ColorSwitchStr + '-';
+	static string C_Red = ColorSwitchStr + ((int)ConsoleColor.Red).ToString("x");
+	static string C_Yellow = ColorSwitchStr + ((int)ConsoleColor.DarkYellow).ToString("x");
+	static string C_Green = ColorSwitchStr + ((int)ConsoleColor.Green).ToString("x");
+	static string C_Blue = ColorSwitchStr + ((int)ConsoleColor.Blue).ToString("x");
+	static string C_Magenta = ColorSwitchStr + ((int)ConsoleColor.Magenta).ToString("x");
+	static string C_Cyan = ColorSwitchStr + ((byte)ConsoleColor.Cyan).ToString("x");
+	static string C_White = ColorSwitchStr + ((int)ConsoleColor.White).ToString("x");
+	static string C_Gray = ColorSwitchStr + ((int)ConsoleColor.DarkGray).ToString("x");
 	static string[] StepColorTxt;
 
 	static BooleanQuiz() {
@@ -255,7 +267,7 @@ class BooleanQuiz {
 		OperationInfo.Add(Or, "at least one is true?");
 		StepColorTxt = new string[StepColors.Length];
 		for (int i = 0; i < StepColors.Length; ++i) {
-			StepColorTxt[i] = ColorSwitchCode.ToString() + ((int)StepColors[i]).ToString("x");
+			StepColorTxt[i] = ColorSwitchStr + ((int)StepColors[i]).ToString("x");
 		}
 	}
 
@@ -299,7 +311,7 @@ class BooleanQuiz {
 			int start = nodeStart + NodeStart.Length;
 			int nodeEnd = textWithNodeIdentified.IndexOf(NodeEnd);
 			bool printThisStep = false;
-			string color = useColor ? StepColorTxt[colorIndex & StepColorTxt.Length] : ColorRevert;
+			string color = useColor ? StepColorTxt[colorIndex % StepColorTxt.Length] : C_Revert;
 			if (nodeStart >= 0) {
 				ListNode nodeToSimplify = found.Node is ListNode ? (ListNode)found.Node : null;
 				string operatorKind = GetOperator(nodeToSimplify);
@@ -308,7 +320,7 @@ class BooleanQuiz {
 					string firstPart = textWithNodeIdentified.Substring(0, nodeStart);
 					string thisLogic = textWithNodeIdentified.Substring(start, nodeEnd - start);
 					string lastPart = textWithNodeIdentified.Substring(nodeEnd + NodeEnd.Length);
-					string fullOutput = firstPart + color + thisLogic + ColorRevert + lastPart + " <-- " + color + OperationInfo[operatorKind] + "\n";
+					string fullOutput = firstPart + color + thisLogic + C_Revert + lastPart + " <-- " + color + OperationInfo[operatorKind] + "\n";
 					WriteWithColorCodes(fullOutput);
 				}
 			}
@@ -332,16 +344,7 @@ class BooleanQuiz {
 			}
 		}
 	}
-	static void WriteColored(string text, ConsoleColor color, bool newline) {
-		ConsoleColor prev = Console.ForegroundColor;
-		Console.ForegroundColor = color;
-		if (newline) {
-			Console.WriteLine(text);
-		} else {
-			Console.Write(text);
-		}
-		Console.ForegroundColor = prev;
-	}
+
 	static string GetOperator(ListNode listNode) {
 		for(int i = 0; i < listNode.Children.Count; ++i) {
 			TokenNode token = listNode.Children[i] as TokenNode;
@@ -408,8 +411,7 @@ class BooleanQuiz {
 							Console.ForegroundColor = defaultColor;
 							break;
 						}
-						int value = (c >= '0' && c <= '9') ? c - '0' : (c >= 'a' && c <= 'f') ? c - 'a' + 10 : 0;
-						Console.ForegroundColor = (ConsoleColor)value;
+						Console.ForegroundColor = (ConsoleColor)GetNumberFromHexCode(c);
 						break;
 				}
 				start = ++end;
@@ -417,16 +419,14 @@ class BooleanQuiz {
 		}
 		Console.ForegroundColor = defaultColor;
 	}
-
+	static int GetNumberFromHexCode(char c) {
+		return (c >= '0' && c <= '9') ? c - '0' : (c >= 'a' && c <= 'f') ? c - 'a' + 10 : 0;
+	}
 	static void Main() {
-		//Console.ForegroundColor = ConsoleColor.Gray;
-		//WriteWithColorCodes("this \b2is \b3a \batest\b- of colored \betext");
 		_userseed = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 		_rng = new Random((int)(_userseed & 0x7FFFFFFF));
 		_allGuesses = "";
-		Console.WriteLine();
-		Console.WriteLine("quiz seed: " + _userseed);
-		int score = 0;
+		print("\nquiz seed: " + _userseed);
 		int streak = 0;
 		int bestStreak = 0;
 		int totalWrong = 0;
@@ -437,11 +437,13 @@ class BooleanQuiz {
 		string userInputStream = "";
 		int expectedscore = 0;
 		string sep = "__________________________________________";
-		while (!userGuess.Equals("q")) {
-			bool askagain = false;
-			Node logic = GenerateQuestion(score);
-			Console.WriteLine("\n\tif (" + SimplifyToString(logic) +
-												") {\n\t  print(\"t\")\n\t} else {\n\t  print(\"f\")\n\t}");
+		bool running = true;
+		while (running) {
+			Node logic = GenerateQuestion(_score);
+			string m = C_Magenta, r = C_Revert, c = C_Cyan, w = C_White, g = C_Gray, y = C_Yellow;
+			WriteWithColorCodes("\n\t"+m+"if"+r+" ("+w+SimplifyToString(logic)+r+") "+g+"{"+r+
+				"\n\t  "+y+"print"+r+"("+c+"\"t\""+r+");\n\t"+g+"}"+r+" "+m+"else"+r+" "+g+"{"+r+
+				"\n\t  "+y+"print"+r+"("+c+"\"f\""+r+");\n\t"+g+"}"+r+"\n");
 			userGuess = "?";
 			if (userInputStream.Length > 0) {
 				userGuess = userInputStream.Substring(0, 1);
@@ -453,9 +455,9 @@ class BooleanQuiz {
 				if (userGuess.Equals("?") || userGuess.Equals("q")) {
 					if (userGuess.Equals("q")) {
 						_allGuesses += "q";
+						running = false;
 					}
-					Console.WriteLine(sep + "\nValidation code:");
-					Console.WriteLine(VCode());
+					WriteWithColorCodes(sep + "\nValidation code:" + VCode() + "\n");
 				}
 				if (userGuess.Length > 3) {
 					try {
@@ -465,112 +467,91 @@ class BooleanQuiz {
 							_rng = new Random((int)(_userseed & 0x7FFFFFFF));
 							_allGuesses = "";
 							userInputStream = data.input;
-							score = 0;
-							streak = 0;
-							bestStreak = 0;
-							totalWrong = 0;
-							totalAnswered = 0;
 							expectedscore = data.score;
-							askagain = true;
+							_score = streak = bestStreak = totalWrong = totalAnswered = 0;
+							hacked = false;
 							break;
 						}
 					} catch (Exception) {
 						// Ignore malformed bulk-input sequences.
 					}
+					userGuess = "";
 				}
 			}
-			if (askagain) { continue; }
-			if (userGuess.Equals("q")) { break; }
+			bool haveValidAnswer = userGuess.Equals("t") || userGuess.Equals("f");
+			if (!haveValidAnswer) { continue; }
 			totalAnswered++;
 			bool finalResult = EvalNode(logic);
 			bool usrRight = (finalResult && userGuess.Equals("t")) || (!finalResult && userGuess.Equals("f"));
-			if (!usrRight) { Console.WriteLine(sep); }
+			if (!usrRight) { print(sep); }
 			PrintWork(logic, !usrRight);
-			if (!usrRight) { Console.WriteLine(sep); }
+			if (!usrRight) { print(sep); }
 			_allGuesses += userGuess;
 			if (usrRight) {
-				score++;
+				_score++;
 				streak++;
 				if (streak > bestStreak) { bestStreak = streak; }
+				int sm = _score;
 				string msg = " YOU WERE RIGHT! ";
-				int sm = score;
 				while (sm > 1) {
 					msg = ">" + msg + "<";
 					sm /= 2;
 				}
-				WriteColored(msg, ConsoleColor.Cyan, false);
-				if (score % 5 == 0 && userInputStream.Length == 0) {
-					Console.Write(" ");
-					WriteColored(VCode(), ConsoleColor.Blue, false);
+				string output = C_Cyan + msg;
+				if (_score % 5 == 0 && userInputStream.Length == 0) {
+					output += " " + C_Blue + VCode();
 				}
-				Console.WriteLine();
+				WriteWithColorCodes(output + "\n");
 			} else {
 				totalWrong++;
-				score = Math.Max(0, score - 2);
+				_score = Math.Max(0, _score - 2);
 				if (streak > 2) {
-					Console.WriteLine("You've answered " + totalWrong + " incorrectly so far, " +
-														"and " + (totalAnswered - totalWrong) + " correctly!");
+					WriteWithColorCodes("You answered " + C_Gray + totalWrong + C_Revert + " incorrectly " +
+						"so far, and " + C_Cyan + (totalAnswered - totalWrong) + C_Revert + " correctly!\n");
 				}
 				streak = 0;
 			}
-			if (score > lastScore + 1) { hacked = true; }
-			_score = score;
-			Console.WriteLine("\n\n");
-			if (hacked) {
-				WriteColored("hacked ", ConsoleColor.Red, false);
-			} else {
-				Console.Write(GetScoreMessage(score));
-			}
-			Console.Write(": ");
-			WriteColored(score.ToString(), ConsoleColor.Green, true);
-			if (!usrRight) { Console.WriteLine("Try the next one."); }
-			lastScore = score;
-			Console.WriteLine(expectedscore);
+			if (_score > lastScore + 1) { hacked = true; }
 			if (userInputStream.Length == 0 && expectedscore != 0) {
-				if (expectedscore == score) {
-					WriteColored("--- valid ---", ConsoleColor.Green, true);
+				if (expectedscore == _score) {
+					WriteWithColorCodes(C_Green + "--- valid ---\n");
 				} else {
-					WriteColored("-- invalid --", ConsoleColor.Red, true);
+					WriteWithColorCodes(C_Red + "--- invalid ---\n");
 				}
 				expectedscore = 0;
 			}
+			string response = "\n\n" + (hacked ? C_Red + "hacked ": GetScoreMessage(_score));
+			WriteWithColorCodes(response + ": " + C_Green + _score + "\n");
+			if (!usrRight) { print("Try the next one."); }
+			lastScore = _score;
 		}
-
-		Console.WriteLine(sep);
+		print(sep);
 		int correct = totalAnswered - totalWrong;
-		Console.WriteLine("Final Score: " + score + "    (" + correct + "/" + totalAnswered + ")");
+		print("Final Score: " + _score + "    (" + correct + "/" + totalAnswered + ")");
 		if (streak > 2) {
-			Console.WriteLine("You just finished " + streak + " correct in a row");
+			print("You just finished " + streak + " correct in a row");
 		}
 		if (bestStreak > 2) {
-			Console.WriteLine("Your best correct-in-a-row was " + bestStreak + "!\n\n");
-		}
-		if (expectedscore != 0) {
-			if (expectedscore != score) {
-				WriteColored("-- invalid --", ConsoleColor.Red, true);
-			} else {
-				WriteColored("--- valid ---", ConsoleColor.Green, true);
-			}
+			print("Your best correct-in-a-row was " + bestStreak + "!\n\n");
 		}
 	}
 	static void PrintUserInputPrompt() {
-		Console.Write("What is the output? (");
-		WriteColored("t", ConsoleColor.Cyan, false);
-		Console.Write(" or ");
-		WriteColored("f", ConsoleColor.Cyan, false);
-		Console.Write(", ");
-		WriteColored("?", ConsoleColor.Cyan, false);
-		Console.Write(" for code, ");
-		WriteColored("q", ConsoleColor.Cyan, false);
-		Console.Write(" to quit) ");
+		string c = C_Cyan, r = C_Revert;
+		string message = "What is the output? (" + c + "t" + r + " or " + c + "f" + r + ", " +
+			c + "?" + r + " for code, " + c + "q" + r + " to quit) ";
+		WriteWithColorCodes(message);
 	}
 	static string GetUserInput() {
+		ConsoleColor defaultColor = Console.ForegroundColor;
 		try {
+			Console.ForegroundColor = ConsoleColor.Cyan;
 			string line = Console.ReadLine();
+			Console.ForegroundColor = defaultColor;
 			if (line == null) { line = "q"; }
 			return line.Trim().ToLower();
 		} catch (Exception e) {
-			Console.WriteLine(e);
+			print(e);
+			Console.ForegroundColor = defaultColor;
 			return "q";
 		}
 	}
@@ -588,8 +569,6 @@ class BooleanQuiz {
 			if (bang2 >= 0) {
 				string userInput = userGuess.Substring(bangIdx + 1, bang2 - bangIdx - 1);
 				int nextscore = int.Parse(userGuess.Substring(bang2 + 1).Trim());
-				Console.WriteLine("NEWSEED " + newseed);
-				Console.WriteLine("EXPECTED SCORE " + nextscore);
 				return new UserValidationCodeData(userInput, newseed, nextscore);
 			}
 		}
