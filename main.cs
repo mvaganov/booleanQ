@@ -2,8 +2,9 @@
 // intentionally written in a Java-like style, for student readability
 using System.Text;
 
-class BooleanQuiz {
+class Program {
 	static void print(object message) { Console.WriteLine(message); }
+	const string sep = "__________________________________________";
 	abstract class Node {
 		public abstract override string ToString();
 		public abstract Node Clone();
@@ -254,7 +255,7 @@ class BooleanQuiz {
 	static string C_Gray = ColorSwitchStr + ((int)ConsoleColor.DarkGray).ToString("x");
 	static string[] StepColorTxt;
 
-	static BooleanQuiz() {
+	static Program() {
 		OperationInfo = new Dictionary<string, string>();
 		OperationInfo.Add(Eq, "values are equal?");
 		OperationInfo.Add(Lte, "less than or equal?");
@@ -356,11 +357,9 @@ class BooleanQuiz {
 		return null;
 	}
 
-	static long _userseed = 0;
-	static string _allGuesses = "";
-	static int _score = 0;
-
-	static string VCode() { return _userseed + "!" + _allGuesses + "!" + _score; }
+	//static long _userseed = 0;
+	//static string _allGuesses = "";
+	//static int _score = 0;
 
 	static string GetScoreMessage(int score) {
 		if (score < 10) { return "score"; }
@@ -422,64 +421,89 @@ class BooleanQuiz {
 	static int GetNumberFromHexCode(char c) {
 		return (c >= '0' && c <= '9') ? c - '0' : (c >= 'a' && c <= 'f') ? c - 'a' + 10 : 0;
 	}
-	static void Main() {
-		_userseed = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-		_rng = new Random((int)(_userseed & 0x7FFFFFFF));
-		_allGuesses = "";
-		print("\nquiz seed: " + _userseed);
-		int streak = 0;
-		int bestStreak = 0;
-		int totalWrong = 0;
-		int totalAnswered = 0;
-		int lastScore = 0;
-		bool hacked = false;
-		string userGuess = "";
-		string userInputStream = "";
-		int expectedscore = 0;
-		string sep = "__________________________________________";
-		bool running = true;
-		while (running) {
-			Node logic = GenerateQuestion(_score);
+	class BooleanQuiz {
+		public long _userseed;
+		public int _score, lastScore, expectedscore, streak, bestStreak, totalAnswered, totalWrong;
+		public string userGuess = "?", userInputStream = "", _allGuesses = "";
+		public bool ShouldQuit, hacked;
+		public Node logic = null;
+		public void Initialize() {
+			_userseed = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+			_rng = new Random((int)(_userseed & 0x7FFFFFFF));
+			_allGuesses = "";
+			WriteWithColorCodes(C_Gray + "\nquiz seed: " + _userseed + "\n");
+		}
+		public string VCode() { return _userseed + "!" + _allGuesses + "!" + _score; }
+		public void GenerateQuestion() { logic = Program.GenerateQuestion(_score); }
+		public void AskQuestion() {
 			string m = C_Magenta, r = C_Revert, c = C_Cyan, w = C_White, g = C_Gray, y = C_Yellow;
-			WriteWithColorCodes("\n\t"+m+"if"+r+" ("+w+SimplifyToString(logic)+r+") "+g+"{"+r+
-				"\n\t  "+y+"print"+r+"("+c+"\"t\""+r+");\n\t"+g+"}"+r+" "+m+"else"+r+" "+g+"{"+r+
-				"\n\t  "+y+"print"+r+"("+c+"\"f\""+r+");\n\t"+g+"}"+r+"\n");
-			userGuess = "?";
+			WriteWithColorCodes("\n\t" + m + "if" + r + " (" + w + SimplifyToString(logic) + r + ") " + g + "{" + r +
+				"\n\t  " + y + "print" + r + "(" + c + "\"t\"" + r + ");\n\t" + g + "}" + r + " " + m + "else" + r + " " + g + "{" + r +
+				"\n\t  " + y + "print" + r + "(" + c + "\"f\"" + r + ");\n\t" + g + "}" + r + "\n");
+		}
+		public void PromptUserInput() {
 			if (userInputStream.Length > 0) {
 				userGuess = userInputStream.Substring(0, 1);
 				userInputStream = userInputStream.Substring(1);
+			} else {
+				userGuess = "";
 			}
+			Console.WriteLine(sep+"["+userInputStream+"]"+sep);
 			while (!userGuess.Equals("t") && !userGuess.Equals("f") && !userGuess.Equals("q")) {
-				PrintUserInputPrompt();
-				userGuess = GetUserInput();
+				string c = C_Cyan, r = C_Revert;
+				string message = "What is the output? (" + c + "t" + r + " or " + c + "f" + r + ", " +
+					c + "?" + r + " for code, " + c + "q" + r + " to quit) ";
+				WriteWithColorCodes(message);
+				userGuess = ReadUserInput();
 				if (userGuess.Equals("?") || userGuess.Equals("q")) {
-					if (userGuess.Equals("q")) {
-						_allGuesses += "q";
-						running = false;
-					}
+					ShouldQuit = userGuess.Equals("q");
 					WriteWithColorCodes(sep + "\nValidation code:" + VCode() + "\n");
 				}
-				if (userGuess.Length > 3) {
-					try {
-						UserValidationCodeData data = ReadUserInputAsValidationCodeData(userGuess);
-						if (data != null) {
-							_userseed = data.seed;
-							_rng = new Random((int)(_userseed & 0x7FFFFFFF));
-							_allGuesses = "";
-							userInputStream = data.input;
-							expectedscore = data.score;
-							_score = streak = bestStreak = totalWrong = totalAnswered = 0;
-							hacked = false;
-							break;
-						}
-					} catch (Exception) {
-						// Ignore malformed bulk-input sequences.
-					}
-					userGuess = "";
+				if (ReadValidationCodeData()) {
+					break;
 				}
 			}
+		}
+		bool ReadValidationCodeData() {
+			if (userGuess.Length < 3) {
+				return false;
+			}
+			try {
+				UserValidationCodeData data = ReadUserInputAsValidationCodeData(userGuess);
+				userGuess = "";
+				if (data != null) {
+					_userseed = data.seed;
+					_rng = new Random((int)(_userseed & 0x7FFFFFFF));
+					_allGuesses = "";
+					userInputStream = data.input;
+					expectedscore = data.score;
+					_score = streak = bestStreak = totalWrong = totalAnswered = 0;
+					hacked = false;
+					return true;
+				}
+			} catch (Exception) {
+				// Ignore malformed bulk-input sequences.
+				userGuess = "";
+			}
+			return false;
+		}
+		static string ReadUserInput() {
+			ConsoleColor defaultColor = Console.ForegroundColor;
+			try {
+				Console.ForegroundColor = ConsoleColor.Cyan;
+				string line = Console.ReadLine();
+				Console.ForegroundColor = defaultColor;
+				if (line == null) { line = "q"; }
+				return line.Trim().ToLower();
+			} catch (Exception e) {
+				print(e);
+				Console.ForegroundColor = defaultColor;
+				return "q";
+			}
+		}
+		public void EvaluateUserInput() {
 			bool haveValidAnswer = userGuess.Equals("t") || userGuess.Equals("f");
-			if (!haveValidAnswer) { continue; }
+			if (!haveValidAnswer) { return; }
 			totalAnswered++;
 			bool finalResult = EvalNode(logic);
 			bool usrRight = (finalResult && userGuess.Equals("t")) || (!finalResult && userGuess.Equals("f"));
@@ -520,40 +544,33 @@ class BooleanQuiz {
 				}
 				expectedscore = 0;
 			}
-			string response = "\n\n" + (hacked ? C_Red + "hacked ": GetScoreMessage(_score));
+			string response = "\n\n" + (hacked ? C_Red + "hacked " : GetScoreMessage(_score));
 			WriteWithColorCodes(response + ": " + C_Green + _score + "\n");
 			if (!usrRight) { print("Try the next one."); }
 			lastScore = _score;
 		}
-		print(sep);
-		int correct = totalAnswered - totalWrong;
-		print("Final Score: " + _score + "    (" + correct + "/" + totalAnswered + ")");
-		if (streak > 2) {
-			print("You just finished " + streak + " correct in a row");
-		}
-		if (bestStreak > 2) {
-			print("Your best correct-in-a-row was " + bestStreak + "!\n\n");
+		public void FinalResults() {
+			print(sep);
+			int correct = totalAnswered - totalWrong;
+			print("Final Score: " + _score + "    (" + correct + "/" + totalAnswered + ")");
+			if (streak > 2) {
+				print("You just finished " + streak + " correct in a row");
+			}
+			if (bestStreak > 2) {
+				print("Your best correct-in-a-row was " + bestStreak + "!\n\n");
+			}
 		}
 	}
-	static void PrintUserInputPrompt() {
-		string c = C_Cyan, r = C_Revert;
-		string message = "What is the output? (" + c + "t" + r + " or " + c + "f" + r + ", " +
-			c + "?" + r + " for code, " + c + "q" + r + " to quit) ";
-		WriteWithColorCodes(message);
-	}
-	static string GetUserInput() {
-		ConsoleColor defaultColor = Console.ForegroundColor;
-		try {
-			Console.ForegroundColor = ConsoleColor.Cyan;
-			string line = Console.ReadLine();
-			Console.ForegroundColor = defaultColor;
-			if (line == null) { line = "q"; }
-			return line.Trim().ToLower();
-		} catch (Exception e) {
-			print(e);
-			Console.ForegroundColor = defaultColor;
-			return "q";
+	static void Main() {
+		BooleanQuiz quiz = new BooleanQuiz();
+		quiz.Initialize();
+		while(!quiz.ShouldQuit) {
+			quiz.GenerateQuestion();
+			quiz.AskQuestion();
+			quiz.PromptUserInput();
+			quiz.EvaluateUserInput();
 		}
+		quiz.FinalResults();
 	}
 	class UserValidationCodeData {
 		public string input; public long seed; public int score;
